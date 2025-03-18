@@ -63,7 +63,11 @@ def main():
                 data = data.sort_index()
                 
             except Exception as e:
-                st.error(f"Error fetching data: {str(e)}")
+                error_message = str(e)
+            if "429" in error_message or "rate limit" in error_message.lower():
+                st.error("⚠️ API rate limit exceeded under free tier. Please wait 5-10 minutes before trying again.")
+            else:
+                st.error(f"Error fetching data: {error_message}")
                 return
         
         # Calculate metrics for display
