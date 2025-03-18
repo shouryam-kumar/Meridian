@@ -38,57 +38,94 @@ class CryptoDataFetcher:
             print(f"Error fetching coins: {response.status_code}")
             return None
     
-    def fetch_historical_data(self, coin_id, days=365, currency='usd'):
+    def fetch_historical_data(self, coin, timeframe):
         """
-        Fetch historical price data for a specific cryptocurrency
+        Fetch historical price data for a cryptocurrency
         
         Args:
-            coin_id (str): Coin identifier (e.g., 'bitcoin')
-            days (int or str): Number of days of data to retrieve or 'max'
-            currency (str): Base currency for price data
+            coin (str): Cryptocurrency symbol (e.g., 'bitcoin', 'ethereum')
+            timeframe (str): Time period for historical data ('30d', '90d', '180d', '1y', 'max')
             
         Returns:
-            pandas.DataFrame: DataFrame with historical data
+            pandas.DataFrame: DataFrame with historical price data
         """
-        url = f"{self.base_url}/coins/{coin_id}/market_chart"
-        params = {
-            'vs_currency': currency,
-            'days': days,
-            'interval': 'daily'
-        }
-        
-        print(f"Fetching historical data for {coin_id}...")
-        response = requests.get(url, params=params)
-        
-        if response.status_code == 200:
+        try:
+            # Map timeframe to number of days
+            days_map = {
+                '30d': 30,
+                '90d': 90,
+                '180d': 180,
+                '1y': 365,
+                'max': 'max'
+            }
+            
+            days = days_map.get(timeframe, 30)  # Default to 30 days if invalid timeframe
+            
+            # Construct API URL
+            base_url = "https://api.coingecko.com/api/v3/coins"
+            
+            # Format the market_chart endpoint URL
+            if days == 'max':
+                url = f"{base_url}/{coin}/market_chart?vs_currency=usd&days=max"
+            else:
+                url = f"{base_url}/{coin}/market_chart?vs_currency=usd&days={days}&interval=daily"
+            
+            print(f"Fetching historical data for {coin}...")
+            
+            # Make the API request
+            response = requests.get(url)
+            
+            # Check for rate limiting
+            if response.status_code == 429:
+                raise Exception("429: API rate limit exceeded. The free tier limit has been reached. Please wait 5-10 minutes before trying again.")
+            
+            # Check for other errors
+            if response.status_code != 200:
+                raise Exception(f"Error fetching data: {response.status_code}")
+            
+            # Parse the response JSON
             data = response.json()
             
-            # Convert price data to DataFrame
-            prices = data['prices']
-            df = pd.DataFrame(prices, columns=['timestamp', 'price'])
-            df['date'] = pd.to_datetime(df['timestamp'], unit='ms')
+            if not data or 'prices' not in data:
+                return None
             
-            # Add volume data
-            volumes = data['total_volumes']
-            volume_df = pd.DataFrame(volumes, columns=['timestamp', 'volume'])
-            df['volume'] = volume_df['volume']
+            # Process price data
+            price_data = []
+            volume_data = []
             
-            # Add market cap data
-            market_caps = data['market_caps']
-            market_cap_df = pd.DataFrame(market_caps, columns=['timestamp', 'market_cap'])
-            df['market_cap'] = market_cap_df['market_cap']
+            for price_point, volume_point in zip(data['prices'], data['total_volumes']):
+                timestamp = price_point[0]
+                price = price_point[1]
+                volume = volume_point[1]
+                
+                # Convert timestamp to datetime
+                date = datetime.fromtimestamp(timestamp / 1000)
+                
+                price_data.append({
+                    'date': date,
+                    'price': price,
+                    'volume': volume
+                })
             
-            # Format DataFrame
-            df = df.drop('timestamp', axis=1)
-            df = df.set_index('date')
+            # Create DataFrame
+            df = pd.DataFrame(price_data)
             
-            # Add daily returns (ensure this is always calculated)
-            df['daily_return'] = df['price'].pct_change() * 100
+            # Set date as index
+            df.set_index('date', inplace=True)
+            
+            # Add daily return
+            df['daily_return'] = df['price'].pct_change()
             
             return df
-        else:
-            print(f"Error fetching data: {response.status_code}")
-            return None
+            
+        except requests.exceptions.RequestException as e:
+            if "429" in str(e):
+                raise Exception("429: API rate limit exceeded. The free tier limit has been reached. Please wait 5-10 minutes before trying again.")
+            else:
+                raise Exception(f"Network error: {str(e)}")
+        except Exception as e:
+            # Propagate the error with clear message
+            raise Exception(f"Error fetching data: {str(e)}")
     
     def save_data(self, data, coin_id, directory='data'):
         """
