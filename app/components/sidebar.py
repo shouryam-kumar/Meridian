@@ -141,7 +141,7 @@ def render_sidebar():
     # Footer
     st.sidebar.markdown("""
     <div class="sidebar-footer">
-        Meridian v1.0.0 | Powered by ML
+        Meridian v1.0.0 
     </div>
     """, unsafe_allow_html=True)
     

@@ -51,7 +51,7 @@ def render_indicators(data, selected_indicators):
                 
                 # Display RSI chart
                 st.subheader("Relative Strength Index (RSI)")
-                # Your visualization code here...
+                
                 
             elif indicator == "macd":
                 # Calculate MACD
@@ -62,7 +62,7 @@ def render_indicators(data, selected_indicators):
                 
                 # Display MACD chart
                 st.subheader("Moving Average Convergence Divergence (MACD)")
-                # Your visualization code here...
+                
                 
             elif indicator == "bollinger":
                 # Calculate Bollinger Bands
@@ -74,7 +74,7 @@ def render_indicators(data, selected_indicators):
                 
                 # Display Bollinger Bands chart
                 st.subheader("Bollinger Bands")
-                # Your visualization code here...
+                
     except Exception as e:
         st.error(f"Error calculating indicators: {str(e)}")
     
