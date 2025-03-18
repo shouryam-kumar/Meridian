@@ -4,6 +4,11 @@ import numpy as np
 import plotly.graph_objects as go
 import traceback
 from datetime import timedelta
+
+import sys
+import os
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from src.models.prediction import PredictionModels
 
 def render_predictions(data, data_with_indicators, prediction_model, prediction_days):
