@@ -2,30 +2,86 @@ import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 
-def render_indicators(data_with_indicators, show_rsi=True, show_macd=True):
-    """Render technical indicators in tabs"""
+def render_indicators(data, selected_indicators):
+    """
+    Render technical indicators and return data with indicators added
     
-    st.subheader("Technical Indicators")
-    
-    # Create tabs for different indicators
-    tabs_to_show = []
-    if show_rsi:
-        tabs_to_show.append("RSI")
-    if show_macd:
-        tabs_to_show.append("MACD")
-    
-    if tabs_to_show:
-        ind_tabs = st.tabs(tabs_to_show)
+    Args:
+        data (pandas.DataFrame): Price data
+        selected_indicators (list): List of indicators to display
         
-        tab_index = 0
-        if show_rsi:
-            with ind_tabs[tab_index]:
-                render_rsi(data_with_indicators)
-            tab_index += 1
-        
-        if show_macd:
-            with ind_tabs[tab_index]:
-                render_macd(data_with_indicators)
+    Returns:
+        pandas.DataFrame: Data with indicators added
+    """
+    # Make a copy of the original data
+    data_with_indicators = data.copy()
+    
+    try:
+        # Add indicators based on selection
+        for indicator in selected_indicators:
+            if indicator == "sma":
+                # Add Simple Moving Average
+                data_with_indicators['sma_7'] = data['price'].rolling(window=7).mean()
+                data_with_indicators['sma_25'] = data['price'].rolling(window=25).mean()
+                
+                # Display SMA chart
+                st.subheader("Simple Moving Average (SMA)")
+                # Your visualization code here...
+                
+            elif indicator == "ema":
+                # Add Exponential Moving Average
+                data_with_indicators['ema_12'] = data['price'].ewm(span=12, adjust=False).mean()
+                data_with_indicators['ema_26'] = data['price'].ewm(span=26, adjust=False).mean()
+                
+                # Display EMA chart
+                st.subheader("Exponential Moving Average (EMA)")
+                # Your visualization code here...
+                
+            elif indicator == "rsi":
+                # Calculate RSI
+                delta = data['price'].diff()
+                gain = delta.clip(lower=0)
+                loss = -delta.clip(upper=0)
+                avg_gain = gain.rolling(window=14).mean()
+                avg_loss = loss.rolling(window=14).mean()
+                
+                # Calculate RS and RSI
+                rs = avg_gain / avg_loss
+                data_with_indicators['rsi'] = 100 - (100 / (1 + rs))
+                
+                # Display RSI chart
+                st.subheader("Relative Strength Index (RSI)")
+                # Your visualization code here...
+                
+            elif indicator == "macd":
+                # Calculate MACD
+                ema_12 = data['price'].ewm(span=12, adjust=False).mean()
+                ema_26 = data['price'].ewm(span=26, adjust=False).mean()
+                data_with_indicators['macd'] = ema_12 - ema_26
+                data_with_indicators['macd_signal'] = data_with_indicators['macd'].ewm(span=9, adjust=False).mean()
+                
+                # Display MACD chart
+                st.subheader("Moving Average Convergence Divergence (MACD)")
+                # Your visualization code here...
+                
+            elif indicator == "bollinger":
+                # Calculate Bollinger Bands
+                window = 20
+                data_with_indicators['bb_middle'] = data['price'].rolling(window=window).mean()
+                data_with_indicators['bb_std'] = data['price'].rolling(window=window).std()
+                data_with_indicators['bb_upper'] = data_with_indicators['bb_middle'] + 2 * data_with_indicators['bb_std']
+                data_with_indicators['bb_lower'] = data_with_indicators['bb_middle'] - 2 * data_with_indicators['bb_std']
+                
+                # Display Bollinger Bands chart
+                st.subheader("Bollinger Bands")
+                # Your visualization code here...
+    except Exception as e:
+        st.error(f"Error calculating indicators: {str(e)}")
+    
+    # Fill NaN values that may have been created by indicators
+    data_with_indicators = data_with_indicators.fillna(method='ffill').fillna(method='bfill')
+    
+    return data_with_indicators
 
 def render_rsi(data):
     """Render RSI indicator chart"""

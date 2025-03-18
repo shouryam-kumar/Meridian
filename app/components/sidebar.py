@@ -1,138 +1,159 @@
 import streamlit as st
-from datetime import datetime
 
-# Function to handle selection changes
-def handle_coin_change():
-    if 'selected_coin_name' in st.session_state and st.session_state.selected_coin_name in coin_options:
-        st.session_state.selected_coin_id = coin_options[st.session_state.selected_coin_name]
-        st.session_state.data = None  # Force refresh data
-
-def handle_period_change():
-    st.session_state.selected_period = time_periods[st.session_state.selected_period_name]
-    st.session_state.data = None  # Force refresh data
-
-def handle_indicator_change():
-    pass  # We'll recalculate indicators when needed
-
-def handle_auto_refresh():
-    st.session_state.data = None  # Force refresh data
-
-# Get available coins - Not using cache due to object hashing issue
-def load_coin_data(fetcher):
-    try:
-        return fetcher.get_available_coins(limit=50)
-    except Exception as e:
-        print(f"Error loading coins: {str(e)}")
-        return None
-
-def render_sidebar(fetcher):
-    """Render the sidebar with all controls"""
+def render_sidebar():
+    """
+    Render sidebar with user controls
     
-    # Define global variables to be used in the handlers
-    global coin_options, time_periods
-    
-    # Sidebar for input controls
-    st.sidebar.header("User Input Parameters")
-    
-    # Initialize variables
-    coin_options = {}
-    time_periods = {
-        "7 days": 7,
-        "30 days": 30,
-        "90 days": 90,
-        "1 year": 365,
-        "Max": "max"
+    Returns:
+        tuple: Selected coin, timeframe, indicators, prediction model, and days
+    """
+    st.sidebar.markdown("""
+    <style>
+    .sidebar-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #1E3A8A;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #E2E8F0;
     }
-    predict_button = False
     
-    with st.sidebar:
-        st.markdown("## Data Selection")
+    .sidebar-section {
+        margin-bottom: 1.5rem;
+    }
+    
+    .sidebar-subtitle {
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #1E3A8A;
+    }
+    
+    /* Vertical space between widgets */
+    .stSelectbox, .stMultiselect, .stSlider {
+        margin-bottom: 1rem;
+    }
+    
+    .coin-icon {
+        margin-right: 8px;
+        font-size: 1.2rem;
+    }
+    
+    .sidebar-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background: #F1F5F9;
+        padding: 1rem;
+        font-size: 0.8rem;
+        text-align: center;
+        color: #64748B;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Sidebar header
+    st.sidebar.markdown("""
+    <div class="sidebar-title">
+        <span class="coin-icon">◑</span> Meridian Controls
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Coin selection section
+    st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-subtitle">Cryptocurrency</div>', unsafe_allow_html=True)
+    
+    coin = st.sidebar.selectbox(
+        "Select a cryptocurrency",
+        ["bitcoin", "ethereum", "cardano", "solana", "ripple", "dogecoin", "polkadot"],
+        index=0,
+        format_func=lambda x: x.capitalize()
+    )
+    
+    timeframe = st.sidebar.selectbox(
+        "Select timeframe",
+        ["30d", "90d", "180d", "1y", "max"],
+        index=2,
+        format_func=lambda x: {
+            "30d": "30 Days", 
+            "90d": "90 Days", 
+            "180d": "180 Days", 
+            "1y": "1 Year", 
+            "max": "Maximum Available"
+        }.get(x, x)
+    )
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+    
+    # Technical Indicators section
+    st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-subtitle">Technical Indicators</div>', unsafe_allow_html=True)
+    
+    indicators = st.sidebar.multiselect(
+        "Select indicators",
+        [
+            "SMA (Simple Moving Average)", 
+            "EMA (Exponential Moving Average)",
+            "RSI (Relative Strength Index)",
+            "MACD (Moving Average Convergence Divergence)",
+            "Bollinger Bands"
+        ],
+        default=["SMA (Simple Moving Average)", "RSI (Relative Strength Index)"]
+    )
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+    
+    # Prediction section
+    st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    st.sidebar.markdown('<div class="sidebar-subtitle">Price Prediction</div>', unsafe_allow_html=True)
+    
+    prediction_model = st.sidebar.selectbox(
+        "Prediction Model",
+        ["Linear Regression", "Random Forest", "Gradient Boosting", "SVR", "Prophet", "Ensemble"],
+        index=5  # Default to Ensemble
+    )
+    
+    prediction_days = st.sidebar.slider(
+        "Prediction Days",
+        min_value=1,
+        max_value=30,
+        value=7,
+        step=1
+    )
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+    
+    # Add info about the app
+    st.sidebar.markdown('<div class="sidebar-section">', unsafe_allow_html=True)
+    with st.sidebar.expander("About Meridian"):
+        st.markdown("""
+        **Meridian** is an advanced cryptocurrency analysis and prediction platform leveraging multiple 
+        machine learning models to forecast price movements.
         
-        # Load coins data - directly call without cache
-        with st.spinner("Loading cryptocurrencies..."):
-            coins_df = load_coin_data(fetcher)
-
-        if coins_df is not None:
-            # Create selection options
-            coin_options = {f"{row['name']} ({row['symbol'].upper()})": row['id'] for _, row in coins_df.iterrows()}
-            
-            # Ensure Bitcoin is in the options
-            if 'Bitcoin (BTC)' not in coin_options:
-                coin_options['Bitcoin (BTC)'] = 'bitcoin'
-            
-            # Find default index for Bitcoin
-            options_list = list(coin_options.keys())
-            default_index = 0
-            if 'Bitcoin (BTC)' in options_list:
-                default_index = options_list.index('Bitcoin (BTC)')
-            elif 'selected_coin_name' in st.session_state and st.session_state.selected_coin_name in options_list:
-                default_index = options_list.index(st.session_state.selected_coin_name)
-            
-            selected_coin_name = st.selectbox(
-                "Select cryptocurrency",
-                options=options_list,
-                index=default_index,
-                key="selected_coin_name",
-                on_change=handle_coin_change
-            )
-            
-            # Time period selection
-            period_options = list(time_periods.keys())
-            default_period_index = 2  # 90 days
-            if 'selected_period_name' in st.session_state and st.session_state.selected_period_name in period_options:
-                default_period_index = period_options.index(st.session_state.selected_period_name)
-            
-            selected_period_name = st.selectbox(
-                "Select time period",
-                options=period_options,
-                index=default_period_index,
-                key="selected_period_name",
-                on_change=handle_period_change
-            )
-            
-            # Technical indicators options
-            st.markdown("## Technical Indicators")
-            if 'show_sma' not in st.session_state:
-                st.session_state.show_sma = True
-                
-            show_sma = st.checkbox("Moving Averages", value=st.session_state.show_sma, key="show_sma", on_change=handle_indicator_change)
-            show_rsi = st.checkbox("RSI", value=st.session_state.show_rsi, key="show_rsi", on_change=handle_indicator_change)
-            show_macd = st.checkbox("MACD", value=st.session_state.show_macd, key="show_macd", on_change=handle_indicator_change)
-            show_bollinger = st.checkbox("Bollinger Bands", value=st.session_state.show_bollinger, key="show_bollinger", on_change=handle_indicator_change)
-            
-            # Prediction options
-            st.markdown("## Prediction Models")
-            prediction_model_options = ["None", "Linear Regression", "ARIMA", "Random Forest"]
-            current_model_index = 0
-            if 'prediction_model' in st.session_state and st.session_state.prediction_model in prediction_model_options:
-                current_model_index = prediction_model_options.index(st.session_state.prediction_model)
-            
-            prediction_model = st.radio(
-                "Select prediction model",
-                options=prediction_model_options,
-                index=current_model_index,
-                key="prediction_model"
-            )
-            
-            prediction_days = st.slider(
-                "Prediction horizon (days)",
-                min_value=1,
-                max_value=30,
-                value=st.session_state.prediction_days,
-                key="prediction_days"
-            )
-            
-            # Refresh data button
-            if st.button("🔄 Refresh Data", on_click=handle_auto_refresh):
-                pass
-            
-            # Add auto-refresh info
-            if 'last_update_time' in st.session_state and st.session_state.last_update_time:
-                st.caption(f"Last updated: {st.session_state.last_update_time.strftime('%H:%M:%S')}")
-                minutes_ago = (datetime.now() - st.session_state.last_update_time).total_seconds() / 60
-                st.caption(f"({int(minutes_ago)} minutes ago)")
-            
-            # Action buttons
-            predict_button = st.button("Generate Predictions", disabled=(st.session_state.prediction_model == "None"))
-            
-    return coin_options, time_periods, predict_button
+        **Features:**
+        - Real-time market data
+        - Technical indicators
+        - Multiple prediction models
+        - Ensemble forecasting
+        
+        For more information, visit our documentation.
+        """)
+    st.sidebar.markdown('</div>', unsafe_allow_html=True)
+    
+    # Footer
+    st.sidebar.markdown("""
+    <div class="sidebar-footer">
+        Meridian v1.0.0 | Powered by ML
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Convert indicators to simpler format for processing
+    indicator_map = {
+        "SMA (Simple Moving Average)": "sma",
+        "EMA (Exponential Moving Average)": "ema",
+        "RSI (Relative Strength Index)": "rsi",
+        "MACD (Moving Average Convergence Divergence)": "macd",
+        "Bollinger Bands": "bollinger"
+    }
+    
+    selected_indicators = [indicator_map[ind] for ind in indicators]
+    
+    return coin, timeframe, selected_indicators, prediction_model, prediction_days

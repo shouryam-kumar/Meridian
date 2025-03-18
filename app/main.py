@@ -1,206 +1,161 @@
 import streamlit as st
-import sys
-import os
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
+import plotly.graph_objects as go
+import plotly.express as px
 
-# Add the project root directory to the Python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-# Import project modules
-from src.data.fetcher import CryptoDataFetcher
-from src.models.indicators import TechnicalIndicators
-from app.components.sidebar import render_sidebar
-from app.components.charts import render_price_chart
-from app.components.indicators import render_indicators
-from app.components.predictions import render_predictions
-
-# Set page config
-st.set_page_config(
-    page_title="Crypto Market Analyzer",
-    page_icon="📊",
-    layout="wide"
+# Import your components
+from components.sidebar import render_sidebar
+from components.charts import render_price_chart, render_volume_chart
+from components.indicators import render_indicators
+from components.predictions import render_predictions
+from utils.branding import (
+    apply_meridian_branding, 
+    render_meridian_header, 
+    render_metrics_row,
+    render_price_header,
+    render_disclaimer,
+    render_footer
 )
 
-# Initialize the data fetcher
-@st.cache_resource
-def get_data_fetcher():
-    return CryptoDataFetcher()
+# Import data fetcher
+from src.data.fetcher import CryptoDataFetcher
 
-fetcher = get_data_fetcher()
+# Configure the page
+st.set_page_config(
+    page_title="Meridian | Crypto Analysis & Prediction",
+    page_icon="◑",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# App title and description
-st.title("Cryptocurrency Market Analyzer & Predictor")
-st.markdown("""
-This app analyzes cryptocurrency market trends using technical indicators and provides price predictions using various models.
-""")
-
-# Initialize session state for persistence
-if 'selected_coin_id' not in st.session_state:
-    st.session_state.selected_coin_id = 'bitcoin'  # Bitcoin as default
-if 'selected_coin_name' not in st.session_state:
-    st.session_state.selected_coin_name = 'Bitcoin (BTC)'  # Default display name
-if 'selected_period' not in st.session_state:
-    st.session_state.selected_period = 90  # Default to 90 days
-if 'selected_period_name' not in st.session_state:
-    st.session_state.selected_period_name = "90 days"
-if 'show_sma' not in st.session_state:
-    st.session_state.show_sma = True
-if 'show_rsi' not in st.session_state:
-    st.session_state.show_rsi = True
-if 'show_macd' not in st.session_state:
-    st.session_state.show_macd = True
-if 'show_bollinger' not in st.session_state:
-    st.session_state.show_bollinger = True
-if 'prediction_model' not in st.session_state:
-    st.session_state.prediction_model = "None"
-if 'prediction_days' not in st.session_state:
-    st.session_state.prediction_days = 7
-if 'data' not in st.session_state:
-    st.session_state.data = None
-if 'data_with_indicators' not in st.session_state:
-    st.session_state.data_with_indicators = None
-if 'last_update_time' not in st.session_state:
-    st.session_state.last_update_time = None
-
-# Check if data needs to be refreshed based on time
-def should_refresh_data():
-    if st.session_state.last_update_time is None:
-        return True
+def main():
+    # Apply Meridian branding first
+    apply_meridian_branding()
     
-    # Refresh data every 5 minutes
-    time_since_update = datetime.now() - st.session_state.last_update_time
-    return time_since_update > timedelta(minutes=5)
-
-# Fetch historical data - using cache with a direct function
-@st.cache_data(ttl=300)  # Cache for 5 minutes
-def get_historical_data(coin_id, days):
-    try:
-        return fetcher.fetch_historical_data(coin_id, days)
-    except Exception as e:
-        print(f"Error fetching data: {str(e)}")
-        return None
-
-# Render sidebar
-coin_options, time_periods, predict_button = render_sidebar(fetcher)
-
-# Initialize containers for different sections
-status_container = st.container()
-data_container = st.container()
-chart_container = st.container()
-indicators_container = st.container()
-prediction_container = st.container()
-
-# Main content area
-if coin_options:
-    # Auto-load data if needed
-    if (st.session_state.selected_coin_id is not None and 
-        (st.session_state.data is None or should_refresh_data())):
+    # Render sidebar and get user selections
+    coin, timeframe, indicators, prediction_model, prediction_days = render_sidebar()
+    
+    # Create main container for all content
+    main_container = st.container()
+    
+    with main_container:
+        # Render the header
+        render_meridian_header()
         
-        with status_container:
-            with st.spinner(f"Fetching data for {st.session_state.selected_coin_name}..."):
-                data = get_historical_data(
-                    st.session_state.selected_coin_id, 
-                    st.session_state.selected_period
-                )
-                if data is not None:
-                    st.session_state.data = data
-                    st.session_state.last_update_time = datetime.now()
-                    
-                    # Ensure daily_return is present
-                    if 'daily_return' not in st.session_state.data.columns:
-                        st.session_state.data['daily_return'] = st.session_state.data['price'].pct_change() * 100
-                    
-                    # Add technical indicators
-                    try:
-                        st.session_state.data_with_indicators = TechnicalIndicators.add_all_indicators(st.session_state.data)
-                    except Exception as e:
-                        print(f"Error calculating indicators: {str(e)}")
-                        st.session_state.data_with_indicators = st.session_state.data.copy()
-                else:
-                    if st.session_state.data is None:  # Only show if no previous data
-                        st.error("Error fetching data from CoinGecko. Please try again later.")
-    
-    # Display analysis if data is available
-    if st.session_state.data is not None:
-        with data_container:
-            st.subheader(f"{st.session_state.selected_coin_name} Analysis")
-            
+        # Display loading message
+        with st.spinner(f'Fetching historical data for {coin}...'):
             try:
-                # Display key metrics
-                col1, col2, col3, col4 = st.columns(4)
-                current_price = st.session_state.data['price'].iloc[-1]
-                price_change = st.session_state.data['price'].iloc[-1] - st.session_state.data['price'].iloc[0]
-                price_change_pct = (price_change / st.session_state.data['price'].iloc[0]) * 100
+                # Fetch data
+                fetcher = CryptoDataFetcher()
+                data = fetcher.fetch_historical_data(coin, timeframe)
                 
-                col1.metric(
-                    "Current Price", 
-                    f"${current_price:.2f}",
-                    f"{price_change_pct:.2f}% in {st.session_state.selected_period_name}"
-                )
+                if data is None or len(data) == 0:
+                    st.error(f"No data available for {coin}. Please try another cryptocurrency.")
+                    return
+                    
+                # Convert to DataFrame if needed
+                if not isinstance(data, pd.DataFrame):
+                    data = pd.DataFrame(data)
+                    
+                # Ensure data is sorted by date
+                data = data.sort_index()
                 
-                col2.metric(
-                    "24h Volume",
-                    f"${st.session_state.data['volume'].iloc[-1]/1000000:.2f}M"
-                )
-                
-                col3.metric(
-                    "Market Cap",
-                    f"${st.session_state.data['market_cap'].iloc[-1]/1000000000:.2f}B"
-                )
-                
-                col4.metric(
-                    "Volatility (Std Dev)",
-                    f"{st.session_state.data['daily_return'].std():.2f}%"
-                )
             except Exception as e:
-                print(f"Error displaying metrics: {str(e)}")
-                st.error("Error displaying metrics. The data may be incomplete.")
+                st.error(f"Error fetching data: {str(e)}")
+                return
         
-        # Render price chart
-        with chart_container:
-            render_price_chart(st.session_state.data, st.session_state.data_with_indicators, 
-                              st.session_state.show_sma, st.session_state.show_bollinger)
+        # Calculate metrics for display
+        current_price = data['price'].iloc[-1]
+        price_change_24h = ((current_price / data['price'].iloc[-2]) - 1) * 100
+        price_change_7d = ((current_price / data['price'].iloc[-7]) - 1) * 100 if len(data) >= 7 else 0
+        volume_24h = data['volume'].iloc[-1]
         
-        # Render indicator tabs
-        if st.session_state.data_with_indicators is not None:
-            with indicators_container:
-                render_indicators(st.session_state.data_with_indicators, 
-                                 st.session_state.show_rsi, st.session_state.show_macd)
+        # Display price header
+        render_price_header(coin, current_price, price_change_24h)
+        
+        # Display metrics in a branded row
+        metrics = [
+            {
+                'title': 'Current Price',
+                'value': f"${current_price:.2f}",
+                'change': f"{price_change_24h:.2f}%"
+            },
+            {
+                'title': '7-Day Change',
+                'value': f"{price_change_7d:.2f}%",
+                'color': '#10B981' if price_change_7d >= 0 else '#EF4444'
+            },
+            {
+                'title': '24h Volume',
+                'value': f"${volume_24h/1000000:.1f}M"
+            },
+            {
+                'title': 'Period',
+                'value': f"{timeframe}"
+            }
+        ]
+        render_metrics_row(metrics)
+        
+        # Add section heading for charts
+        st.markdown('<h2 style="color: #1E3A8A; margin-top: 2rem;">Market Data</h2>', unsafe_allow_html=True)
+        
+        # Create two columns for price and volume charts
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Render price chart in a branded container
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size: 1.1rem; font-weight: 600; color: #1E3A8A; margin-bottom: 1rem;">Price History ({coin.upper()})</div>', unsafe_allow_html=True)
+            render_price_chart(data)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            # Render volume chart in a branded container
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            st.markdown('<div style="font-size: 1.1rem; font-weight: 600; color: #1E3A8A; margin-bottom: 1rem;">Trading Volume</div>', unsafe_allow_html=True)
+            render_volume_chart(data)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Apply technical indicators if selected
+        data_with_indicators = data.copy()  # Default, will be replaced if indicators are selected
+        if indicators:
+            st.markdown('<h2 style="color: #1E3A8A; margin-top: 2rem;">Technical Indicators</h2>', unsafe_allow_html=True)
+            # Render indicators section with Meridian styling
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            data_with_indicators = render_indicators(data, indicators)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Render predictions section
+        if data_with_indicators is None:  # Fallback if indicators function had an error
+            data_with_indicators = data.copy()
+            
+        st.markdown('<h2 style="color: #1E3A8A; margin-top: 2rem;">Price Predictions</h2>', unsafe_allow_html=True)
+        st.markdown('<div class="prediction-container">', unsafe_allow_html=True)
+        
+        # Add model badge if needed
+        st.markdown(f'<div style="font-size: 0.9rem; background-color: #DBEAFE; color: #1E3A8A; display: inline-block; padding: 0.3rem 0.6rem; border-radius: 4px; margin-bottom: 1rem;">Model: {prediction_model}</div>', unsafe_allow_html=True)
         
         # Render predictions
-        if predict_button and st.session_state.prediction_model != "None":
-            with prediction_container:
-                render_predictions(st.session_state.data, st.session_state.data_with_indicators, 
-                                  st.session_state.prediction_model, st.session_state.prediction_days)
+        render_predictions(data, data_with_indicators, prediction_model, prediction_days)
         
-        # Raw data display option
-        with st.expander("Show Raw Data"):
-            # Only show the last 100 rows to prevent rendering issues
-            st.dataframe(st.session_state.data.tail(100), use_container_width=True)
+        # Add disclaimer
+        st.markdown("""
+        <div style="background-color: #FEFCE8; border-left: 4px solid #EAB308; padding: 1rem; border-radius: 4px; font-size: 0.9rem; color: #854D0E; margin-top: 1rem;">
+            <strong>Disclaimer:</strong> These predictions are based on historical patterns and technical analysis.
+            Cryptocurrency markets are highly volatile and unpredictable. Past performance is not indicative of future results.
+            Do not use these predictions as the sole basis for investment decisions.
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Download option
-        csv_data = st.session_state.data.to_csv().encode('utf-8')
-        st.download_button(
-            label="Download CSV",
-            data=csv_data,
-            file_name=f"{st.session_state.selected_coin_id}_{st.session_state.selected_period_name.replace(' ', '_')}_data.csv",
-            mime="text/csv"
-        )
-    else:
-        # If no data is available yet, show a loading message
-        st.info("Loading cryptocurrency data. Please wait...")
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        # Add some space before the footer
+        st.markdown("<div style='height: 50px;'></div>", unsafe_allow_html=True)
+        
+        # Add the footer at the end
+        render_footer()
 
-# Add footer
-st.markdown("---")
-st.markdown("Data provided by CoinGecko API | Built with Streamlit")
-
-# Add auto-refresh script
-st.markdown("""
-<script>
-    // Auto refresh the page every 5 minutes (300000 milliseconds)
-    setTimeout(function() {
-        window.location.reload();
-    }, 300000);
-</script>
-""", unsafe_allow_html=True)
+if __name__ == "__main__":
+    main()
